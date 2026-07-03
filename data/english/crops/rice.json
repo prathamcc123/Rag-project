@@ -1,0 +1,44 @@
+{
+  "id": "crop_001",
+  "language": "english",
+  "category": "crop",
+
+  "crop_name": "Rice",
+  "scientific_name": "Oryza sativa",
+
+  "description": "Rice is one of the most important cereal crops grown in India and is the staple food for a large part of the population.",
+
+  "soil_type": [
+    "Clay soil",
+    "Loamy soil"
+  ],
+
+  "temperature": "20°C - 35°C",
+
+  "water_requirement": "High",
+
+  "growing_season": "Kharif",
+
+  "sowing_time": "June to July",
+
+  "harvesting_time": "October to November",
+
+  "fertilizers": [
+    "Urea",
+    "DAP",
+    "NPK"
+  ],
+
+  "major_diseases": [
+    "Blast",
+    "Brown Spot",
+    "Bacterial Leaf Blight"
+  ],
+
+  "major_pests": [
+    "Stem Borer",
+    "Brown Planthopper"
+  ],
+
+  "yield": "3-6 tonnes per hectare"
+}

@@ -1,0 +1,45 @@
+{
+  "id": "crop_001_hi",
+  "language": "hindi",
+  "category": "crop",
+
+  "crop_name": "धान",
+
+  "scientific_name": "Oryza sativa",
+
+  "description": "धान भारत की प्रमुख खाद्यान्न फसलों में से एक है।",
+
+  "soil_type": [
+    "चिकनी मिट्टी",
+    "दोमट मिट्टी"
+  ],
+
+  "temperature": "20°C - 35°C",
+
+  "water_requirement": "अधिक",
+
+  "growing_season": "खरीफ",
+
+  "sowing_time": "जून से जुलाई",
+
+  "harvesting_time": "अक्टूबर से नवंबर",
+
+  "fertilizers": [
+    "यूरिया",
+    "डीएपी",
+    "एनपीके"
+  ],
+
+  "major_diseases": [
+    "ब्लास्ट",
+    "ब्राउन स्पॉट",
+    "बैक्टीरियल लीफ ब्लाइट"
+  ],
+
+  "major_pests": [
+    "स्टेम बोरर",
+    "ब्राउन प्लांटहॉपर"
+  ],
+
+  "yield": "3-6 टन प्रति हेक्टेयर"
+}
