@@ -14,6 +14,11 @@ from sentence_transformers import (
 )
 from sentence_transformers.training_args import BatchSamplers
 from transformers import set_seed
+import torch
+
+# Clear MPS cache before training
+if torch.backends.mps.is_available():
+    torch.mps.empty_cache()
 
 # ============================================================
 # Configuration
@@ -28,7 +33,7 @@ OUTPUT_DIR = "models/muril_agriculture"
 
 MAX_SEQ_LENGTH = 128
 
-BATCH_SIZE = 2
+BATCH_SIZE = 4
 
 NUM_EPOCHS = 1
 
@@ -153,8 +158,10 @@ training_args = SentenceTransformerTrainingArguments(
     num_train_epochs=NUM_EPOCHS,
 
     per_device_train_batch_size=BATCH_SIZE,
-
     per_device_eval_batch_size=BATCH_SIZE,
+
+    # Effective batch size = 8
+    gradient_accumulation_steps=2,
 
     learning_rate=LEARNING_RATE,
 
@@ -162,18 +169,21 @@ training_args = SentenceTransformerTrainingArguments(
 
     batch_sampler=BatchSamplers.NO_DUPLICATES,
 
-    save_strategy="epoch",
+    # Save checkpoint every 100 steps
+    save_strategy="steps",
+    save_steps=100,
 
-    eval_strategy="epoch",
+    # Evaluate every 100 steps
+    eval_strategy="steps",
+    eval_steps=100,
 
-    logging_steps=50,
+    logging_steps=25,
 
-    save_total_limit=2,
+    save_total_limit=3,
 
     load_best_model_at_end=True,
 
     fp16=False,
-
     bf16=False,
 
     seed=SEED,
@@ -200,10 +210,23 @@ print("\n" + "=" * 60)
 print("Starting Fine-Tuning...")
 print("=" * 60)
 
-trainer.train()
+from pathlib import Path
+
+# Look for existing checkpoints
+checkpoint_dirs = sorted(
+    Path(OUTPUT_DIR).glob("checkpoint-*"),
+    key=lambda x: int(x.name.split("-")[-1])
+)
+
+if checkpoint_dirs:
+    latest_checkpoint = str(checkpoint_dirs[-1])
+    print(f"\nResuming from checkpoint: {latest_checkpoint}")
+    trainer.train(resume_from_checkpoint=latest_checkpoint)
+else:
+    print("\nNo checkpoint found. Starting fresh training.")
+    trainer.train()
 
 print("\n✓ Training completed successfully.")
-
 # ============================================================
 # Save Model
 # ============================================================
