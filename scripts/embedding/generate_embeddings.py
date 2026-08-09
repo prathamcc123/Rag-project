@@ -12,7 +12,21 @@ import sys
 # Configuration
 # ============================================================
 
-MODEL_PATH = "models/muril_agriculture"
+import argparse
+
+parser = argparse.ArgumentParser(
+    description="Generate embeddings using a specified SentenceTransformer model."
+)
+
+parser.add_argument(
+    "model_path",
+    type=str,
+    help="Path to the SentenceTransformer model"
+)
+
+args = parser.parse_args()
+
+MODEL_PATH = args.model_path
 
 CHUNK_DIR = Path("data/chunks/hindi")
 
@@ -24,7 +38,7 @@ FINAL_EMBEDDING_FILE = OUTPUT_DIR / "embeddings.npy"
 
 FINAL_METADATA_FILE = OUTPUT_DIR / "metadata.json"
 
-BATCH_SIZE = 16
+BATCH_SIZE = 4
 
 SAVE_EVERY = 500
 

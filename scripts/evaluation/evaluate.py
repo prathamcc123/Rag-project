@@ -30,20 +30,43 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.rag.retrieve import retrieve_query
+from backend.retrieve import retrieve_query
 
 # ============================================================
 # Configuration
 # ============================================================
 
+# ============================================================
+# Configuration
+# ============================================================
+
+import argparse
+
+parser = argparse.ArgumentParser(
+    description="Evaluate retrieval performance."
+)
+
+parser.add_argument(
+    "model_name",
+    type=str,
+    help="Model name used for evaluation"
+)
+
+args = parser.parse_args()
+
+# Evaluation dataset
 TEST_FILE = "scripts/evaluation/test_questions.json"
 
-RESULT_FILE = "scripts/evaluation/results.csv"
+# Output files
+RESULT_FILE = (
+    f"scripts/evaluation/results_{args.model_name}.csv"
+)
 
-SUMMARY_FILE = "scripts/evaluation/evaluation_summary.txt"
+SUMMARY_FILE = (
+    f"scripts/evaluation/evaluation_summary_{args.model_name}.txt"
+)
 
 TOP_K = 5
-
 
 # ============================================================
 # Load Test Questions
@@ -72,11 +95,15 @@ def evaluate_question(sample):
 
     expected = sample["expected_article"]
 
-    retrieved_chunks, _ = retrieve_query(
-        question,
-        verbose=False,
-        save_context=False,
-    )
+    retrieved_chunks, _ = retrieve_query(question)
+
+    retrieved_titles = [
+
+        chunk["title"]
+
+        for chunk in retrieved_chunks
+
+    ]
 
     retrieved_titles = [
         chunk["title"]
