@@ -25,9 +25,9 @@ from bs4 import BeautifulSoup
 # PATHS
 # =====================================================
 
-URL_FILE = Path("data/urls/hindi_urls.txt")
+URL_FILE = Path("data/urls/kannada_urls.txt")
 
-OUTPUT_DIR = Path("data/scraped/hindi")
+OUTPUT_DIR = Path("data/scraped/kannada")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 FAILED_FILE = Path("data/urls/failed_urls.txt")
@@ -50,6 +50,9 @@ HEADERS = {
 
 with open(URL_FILE, "r", encoding="utf-8") as f:
     urls = [line.strip() for line in f if line.strip()]
+
+# Remove duplicate URLs
+urls = list(dict.fromkeys(urls))
 
 TOTAL = len(urls)
 
@@ -167,11 +170,16 @@ for index, url in enumerate(urls, start=1):
             # -----------------------------------------
             # Save JSON
             # -----------------------------------------
+            if len(content.strip()) < 300:
+
+               print(f"[{index}/{TOTAL}] Content too small, skipped")
+
+               continue
 
             article = {
                 "title": title,
                 "summary": summary,
-                "language": "Hindi",
+                "language": "Kannada",
                 "source": "Vikaspedia",
                 "url": url,
                 "content": content
