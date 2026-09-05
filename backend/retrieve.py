@@ -1,9 +1,10 @@
 import json
 from pathlib import Path
 from typing import List, Tuple, Dict
-from deep_translator import GoogleTranslator
+
 import faiss
 import numpy as np
+from deep_translator import GoogleTranslator
 from sentence_transformers import SentenceTransformer
 
 from backend.config import (
@@ -13,25 +14,68 @@ from backend.config import (
     TOP_K,
     SEARCH_K,
 )
+
+
+# ============================================================
+# Kannada Vector Database Configuration
+# ============================================================
+
+KANNADA_VECTOR_DB_PATH = (
+    Path(INDEX_PATH).parent / "kannada"
+)
+
+KANNADA_INDEX_PATH = (
+    KANNADA_VECTOR_DB_PATH / "faiss.index"
+)
+
+KANNADA_METADATA_PATH = (
+    KANNADA_VECTOR_DB_PATH / "metadata.json"
+)
+
+
 # ============================================================
 # Retriever Class
 # ============================================================
+
 class Retriever:
     """
-    Semantic Retriever using
-    - Fine-tuned SentenceTransformer
-    - FAISS Index
-    - Metadata JSON
+    Language-aware semantic retriever for AgriSahayak AI.
 
-    This class loads everything only once when the
-    Streamlit app starts.
+    Hindi / Existing Path:
+        Query
+          ↓
+        Translate to Hindi
+          ↓
+        Embedding Model
+          ↓
+        Hindi FAISS
+          ↓
+        Hindi Metadata
+
+    Kannada Path:
+        Query
+          ↓
+        No Translation
+          ↓
+        Embedding Model
+          ↓
+        Kannada FAISS
+          ↓
+        Kannada Metadata
     """
 
     def __init__(self):
 
+        # Embedding model
         self.model = None
+
+        # Hindi resources
         self.index = None
         self.metadata = None
+
+        # Kannada resources
+        self.kannada_index = None
+        self.kannada_metadata = None
 
         self._initialize()
 
@@ -43,24 +87,58 @@ class Retriever:
 
         self._verify_files()
 
+        # Load embedding model
         self.model = self._load_model()
 
-        self.index = self._load_index()
+        # Load Hindi resources
+        self.index = self._load_index(
+            INDEX_PATH,
+            "Hindi FAISS Index",
+        )
 
-        self.metadata = self._load_metadata()
+        self.metadata = self._load_metadata(
+            METADATA_PATH,
+            "Hindi Metadata",
+        )
 
-        self._verify_index()
+        # Load Kannada resources
+        self.kannada_index = self._load_index(
+            KANNADA_INDEX_PATH,
+            "Kannada FAISS Index",
+        )
+
+        self.kannada_metadata = self._load_metadata(
+            KANNADA_METADATA_PATH,
+            "Kannada Metadata",
+        )
+
+        # Verify both databases
+        self._verify_index(
+            self.index,
+            self.metadata,
+            "Hindi",
+        )
+
+        self._verify_index(
+            self.kannada_index,
+            self.kannada_metadata,
+            "Kannada",
+        )
 
     # ========================================================
-    # File Verification
+    # Verify Required Files
     # ========================================================
 
     def _verify_files(self):
 
         required_files = {
-            "Model": MODEL_PATH,
-            "FAISS Index": INDEX_PATH,
-            "Metadata": METADATA_PATH,
+            "Embedding Model": MODEL_PATH,
+
+            "Hindi FAISS Index": INDEX_PATH,
+            "Hindi Metadata": METADATA_PATH,
+
+            "Kannada FAISS Index": KANNADA_INDEX_PATH,
+            "Kannada Metadata": KANNADA_METADATA_PATH,
         }
 
         missing = []
@@ -68,39 +146,68 @@ class Retriever:
         for name, path in required_files.items():
 
             if not Path(path).exists():
-                missing.append(f"{name}: {path}")
+
+                missing.append(
+                    f"{name}: {path}"
+                )
 
         if missing:
 
             raise FileNotFoundError(
-                "\n".join(missing)
+                "Missing required files:\n"
+                + "\n".join(missing)
             )
 
     # ========================================================
-    # Load Sentence Transformer
+    # Load Embedding Model
     # ========================================================
 
     def _load_model(self):
 
         print("Loading embedding model...")
 
-        model = SentenceTransformer(str(MODEL_PATH))
+        model = SentenceTransformer(
+            str(MODEL_PATH)
+        )
 
         print("✓ Embedding model loaded")
+
+        print(
+            "Embedding dimension:",
+            model.get_sentence_embedding_dimension()
+        )
 
         return model
 
     # ========================================================
-    # Load FAISS
+    # Load FAISS Index
     # ========================================================
 
-    def _load_index(self):
+    def _load_index(
+        self,
+        path,
+        name: str,
+    ):
 
-        print("Loading FAISS index...")
+        print(
+            f"Loading {name}..."
+        )
 
-        index = faiss.read_index(str(INDEX_PATH))
+        index = faiss.read_index(
+            str(path)
+        )
 
-        print(f"✓ Loaded {index.ntotal} vectors")
+        print(
+            f"✓ {name} loaded"
+        )
+
+        print(
+            f"  Vectors: {index.ntotal}"
+        )
+
+        print(
+            f"  Dimension: {index.d}"
+        )
 
         return index
 
@@ -108,92 +215,234 @@ class Retriever:
     # Load Metadata
     # ========================================================
 
-    def _load_metadata(self):
+    def _load_metadata(
+        self,
+        path,
+        name: str,
+    ):
 
-        print("Loading metadata...")
+        print(
+            f"Loading {name}..."
+        )
 
-        with open(METADATA_PATH, "r", encoding="utf-8") as f:
+        with open(
+            path,
+            "r",
+            encoding="utf-8",
+        ) as f:
+
             metadata = json.load(f)
 
-        print(f"✓ Loaded {len(metadata)} metadata entries")
+        print(
+            f"✓ {name} loaded"
+        )
+
+        print(
+            f"  Records: {len(metadata)}"
+        )
 
         return metadata
 
     # ========================================================
-    # Verify Index
+    # Verify FAISS and Metadata
     # ========================================================
 
-    def _verify_index(self):
+    def _verify_index(
+        self,
+        index,
+        metadata,
+        language: str,
+    ):
 
-        if self.index.ntotal != len(self.metadata):
+        if index.ntotal != len(metadata):
 
             raise RuntimeError(
-                "Metadata count does not match FAISS index."
+                f"{language} FAISS index and "
+                f"metadata count do not match.\n"
+                f"FAISS vectors: {index.ntotal}\n"
+                f"Metadata records: {len(metadata)}"
             )
 
+        print(
+            f"✓ {language} index verification passed"
+        )
+
     # ========================================================
-    # Query Embedding
+    # Kannada Language Detection
+    # ========================================================
+
+    @staticmethod
+    def _is_kannada_query(
+        query: str,
+    ) -> bool:
+        """
+        Detect Kannada-script text.
+
+        Kannada Unicode range:
+            U+0C80 - U+0CFF
+
+        This is intentionally used instead of translating
+        every query to Hindi because Kannada queries must
+        be searched directly against the Kannada index.
+        """
+
+        for char in query:
+
+            if "\u0C80" <= char <= "\u0CFF":
+
+                return True
+
+        return False
+
+    # ========================================================
+    # Detect Query Language
+    # ========================================================
+
+    def _detect_language(
+        self,
+        query: str,
+    ) -> str:
+        """
+        Detect the retrieval language.
+
+        Returns:
+            kn -> Kannada
+            hi -> Existing Hindi retrieval path
+
+        Existing Hindi behavior is preserved for all
+        non-Kannada queries.
+        """
+
+        if self._is_kannada_query(query):
+
+            return "kn"
+
+        return "hi"
+
+    # ========================================================
+    # Generate Query Embedding
     # ========================================================
 
     def _embed_query(
         self,
         query: str,
+        language: str,
     ) -> np.ndarray:
 
-        translated_query = query
+        query_for_embedding = query
 
-        if GoogleTranslator is not None:
+        # ----------------------------------------------------
+        # Kannada
+        # ----------------------------------------------------
 
-            try:
+        if language == "kn":
 
-                translated = GoogleTranslator(
-                    source="auto",
-                    target="hi"
-                ).translate(query)
+            print(
+                f"Original Query   : {query}"
+            )
 
-                if translated and translated.strip():
-                    translated_query = translated
+            print(
+                "Detected Language: Kannada"
+            )
 
-                print(f"Original Query   : {query}")
-                print(f"Translated Query : {translated_query}")
+            print(
+                "Translation      : Skipped"
+            )
 
-            except Exception as e:
-
-                print(f"Translation Error: {e}")
+        # ----------------------------------------------------
+        # Hindi / Existing Path
+        # ----------------------------------------------------
 
         else:
 
             print(
-                "Translation skipped: deep_translator package not installed."
+                f"Original Query   : {query}"
             )
 
+            print(
+                "Detected Language: Hindi/Existing Path"
+            )
+
+            try:
+
+                translated_query = (
+                    GoogleTranslator(
+                        source="auto",
+                        target="hi",
+                    ).translate(query)
+                )
+
+                if (
+                    translated_query
+                    and translated_query.strip()
+                ):
+
+                    query_for_embedding = (
+                        translated_query
+                    )
+
+                print(
+                    f"Translated Query : "
+                    f"{query_for_embedding}"
+                )
+
+            except Exception as e:
+
+                print(
+                    f"Translation Error: {e}"
+                )
+
+                print(
+                    "Using original query "
+                    "for embedding."
+                )
+
+        # ----------------------------------------------------
+        # Generate Embedding
+        # ----------------------------------------------------
+
         embedding = self.model.encode(
-            translated_query,
+            query_for_embedding,
             convert_to_numpy=True,
             normalize_embeddings=True,
+        )
+
+        # Make sure embedding is float32
+        embedding = embedding.astype(
+            np.float32
         )
 
         return np.expand_dims(
             embedding,
             axis=0,
         )
-    
+
     # ========================================================
-    # Search
+    # Search FAISS
     # ========================================================
 
     def _search(
         self,
         embedding: np.ndarray,
+        language: str,
     ):
 
-        scores, indices = self.index.search(
+        if language == "kn":
+
+            index = self.kannada_index
+
+        else:
+
+            index = self.index
+
+        scores, indices = index.search(
             embedding,
             SEARCH_K,
         )
 
         return scores, indices
-        # ========================================================
+
+    # ========================================================
     # Process Retrieved Results
     # ========================================================
 
@@ -201,32 +450,55 @@ class Retriever:
         self,
         scores,
         indices,
+        language: str,
     ) -> Tuple[List[Dict], str]:
-        """
-        Process FAISS results, remove duplicate articles,
-        and build the final context.
-        """
+
+        # Select correct metadata
+        if language == "kn":
+
+            metadata = self.kannada_metadata
+
+        else:
+
+            metadata = self.metadata
 
         retrieved_chunks = []
+
         context_parts = []
+
+        # Avoid returning multiple chunks from the same
+        # article when possible.
         seen_articles = set()
 
         rank = 1
 
-        for score, idx in zip(scores[0], indices[0]):
+        for score, idx in zip(
+            scores[0],
+            indices[0],
+        ):
 
+            # FAISS may return -1 if no result exists
             if idx == -1:
+
                 continue
 
-            chunk = self.metadata[idx]
+            # Safety check
+            if idx >= len(metadata):
 
-            # --------------------------------------------------
-            # Detect duplicate articles
-            # --------------------------------------------------
+                continue
+
+            chunk = metadata[idx]
+
+            # ------------------------------------------------
+            # Article ID
+            # ------------------------------------------------
 
             if "chunk_id" in chunk:
 
-                article_id = chunk["chunk_id"].split("_chunk_")[0]
+                article_id = (
+                    chunk["chunk_id"]
+                    .split("_chunk_")[0]
+                )
 
             elif "url" in chunk:
 
@@ -239,10 +511,21 @@ class Retriever:
                     f"doc_{idx}",
                 )
 
+            # ------------------------------------------------
+            # Deduplicate Article
+            # ------------------------------------------------
+
             if article_id in seen_articles:
+
                 continue
 
-            seen_articles.add(article_id)
+            seen_articles.add(
+                article_id
+            )
+
+            # ------------------------------------------------
+            # Store Retrieved Chunk
+            # ------------------------------------------------
 
             retrieved_chunks.append(
                 {
@@ -251,15 +534,38 @@ class Retriever:
                 }
             )
 
-            # --------------------------------------------------
-            # Build Context
-            # --------------------------------------------------
+            # ------------------------------------------------
+            # Extract Metadata
+            # ------------------------------------------------
 
-            title = chunk.get("title", "Untitled")
-            summary = chunk.get("summary", "")
-            language = chunk.get("language", "")
-            url = chunk.get("url", "")
-            content = chunk.get("content", "")
+            title = chunk.get(
+                "title",
+                "Untitled",
+            )
+
+            summary = chunk.get(
+                "summary",
+                "",
+            )
+
+            chunk_language = chunk.get(
+                "language",
+                language,
+            )
+
+            url = chunk.get(
+                "url",
+                "",
+            )
+
+            content = chunk.get(
+                "content",
+                "",
+            )
+
+            # ------------------------------------------------
+            # Build RAG Context
+            # ------------------------------------------------
 
             context_parts.append(
                 f"""
@@ -272,7 +578,7 @@ Summary:
 {summary}
 
 Language:
-{language}
+{chunk_language}
 
 URL:
 {url}
@@ -284,15 +590,23 @@ Content:
 
             rank += 1
 
-            if len(retrieved_chunks) >= TOP_K:
+            if len(
+                retrieved_chunks
+            ) >= TOP_K:
+
                 break
 
-        context = "\n\n".join(context_parts)
+        context = "\n\n".join(
+            context_parts
+        )
 
-        return retrieved_chunks, context
+        return (
+            retrieved_chunks,
+            context,
+        )
 
     # ========================================================
-    # Public Retrieval Function
+    # Main Retrieval Method
     # ========================================================
 
     def retrieve(
@@ -300,136 +614,252 @@ Content:
         query: str,
     ) -> Tuple[List[Dict], str]:
         """
-        Retrieve relevant chunks for a user query.
+        Retrieve relevant documents for a user query.
+
+        Kannada queries use the Kannada vector database.
+
+        All other queries preserve the existing Hindi
+        retrieval behavior.
         """
 
         if not query or not query.strip():
-            raise ValueError("Query cannot be empty.")
 
-        embedding = self._embed_query(query)
+            raise ValueError(
+                "Query cannot be empty."
+            )
 
-        scores, indices = self._search(embedding)
+        query = query.strip()
 
-        retrieved_chunks, context = self._process_results(
-            scores,
-            indices,
+        # ----------------------------------------------------
+        # Detect language
+        # ----------------------------------------------------
+
+        language = self._detect_language(
+            query
         )
 
-        return retrieved_chunks, context
-    # ========================================================
+        print(
+            f"\nRetrieval Language: {language}"
+        )
+
+        # ----------------------------------------------------
+        # Generate query embedding
+        # ----------------------------------------------------
+
+        embedding = self._embed_query(
+            query=query,
+            language=language,
+        )
+
+        # ----------------------------------------------------
+        # Search correct vector database
+        # ----------------------------------------------------
+
+        scores, indices = self._search(
+            embedding=embedding,
+            language=language,
+        )
+
+        # ----------------------------------------------------
+        # Process results
+        # ----------------------------------------------------
+
+        retrieved_chunks, context = (
+            self._process_results(
+                scores=scores,
+                indices=indices,
+                language=language,
+            )
+        )
+
+        return (
+            retrieved_chunks,
+            context,
+        )
+
+
+# ============================================================
 # Retriever Singleton
-# ========================================================
+# ============================================================
 
 _retriever = None
 
 
 def get_retriever() -> Retriever:
-    """
-    Returns a singleton Retriever instance.
-
-    The model, FAISS index and metadata are loaded only once,
-    which avoids repeated initialization in Streamlit.
-    """
 
     global _retriever
 
     if _retriever is None:
+
         _retriever = Retriever()
 
     return _retriever
 
 
-# ========================================================
-# Backward Compatible Function
-# ========================================================
+# ============================================================
+# Public API
+# ============================================================
 
 def retrieve_query(
     query: str,
 ):
     """
-    Backward compatible wrapper.
-
-    Returns
-    -------
-    retrieved_chunks : List[Dict]
-    context : str
+    Public retrieval function used by RAGPipeline.
     """
 
     retriever = get_retriever()
 
-    return retriever.retrieve(query)
+    return retriever.retrieve(
+        query
+    )
 
 
-# ========================================================
-# Utility Function
-# ========================================================
+# ============================================================
+# Health Check
+# ============================================================
 
 def health_check() -> dict:
     """
-    Returns information about the retrieval system.
-
-    Useful for debugging and About page.
+    Return retriever health information.
     """
 
     retriever = get_retriever()
 
     return {
-        "model_loaded": retriever.model is not None,
-        "index_loaded": retriever.index is not None,
-        "metadata_loaded": retriever.metadata is not None,
-        "embedding_dimension": retriever.model.get_sentence_embedding_dimension(),
-        "total_vectors": retriever.index.ntotal,
-        "metadata_entries": len(retriever.metadata),
-        "top_k": TOP_K,
-        "search_k": SEARCH_K,
+        "model_loaded":
+            retriever.model is not None,
+
+        "hindi_index_loaded":
+            retriever.index is not None,
+
+        "hindi_metadata_loaded":
+            retriever.metadata is not None,
+
+        "kannada_index_loaded":
+            retriever.kannada_index is not None,
+
+        "kannada_metadata_loaded":
+            retriever.kannada_metadata is not None,
+
+        "hindi_vectors":
+            retriever.index.ntotal,
+
+        "kannada_vectors":
+            retriever.kannada_index.ntotal,
+
+        "embedding_dimension":
+            retriever.model
+            .get_sentence_embedding_dimension(),
     }
 
 
-# ========================================================
+# ============================================================
 # Interactive Testing
-# ========================================================
+# ============================================================
 
 def main():
 
     print("=" * 60)
-    print("AgriSahayak AI Retrieval Test")
+    print("AgriSahayak AI - Multilingual Retriever Test")
     print("=" * 60)
+
+    print(
+        f"\nHindi Index   : {INDEX_PATH}"
+    )
+
+    print(
+        f"Kannada Index : {KANNADA_INDEX_PATH}"
+    )
+
+    print(
+        f"Model         : {MODEL_PATH}"
+    )
 
     while True:
 
-        query = input("\nEnter your question (or 'exit'): ").strip()
+        question = input(
+            "\nAsk your agriculture question "
+            "('exit' to quit): "
+        ).strip()
 
-        if query.lower() in {"exit", "quit"}:
-            print("Goodbye!")
+        if question.lower() in {
+            "exit",
+            "quit",
+        }:
+
+            print(
+                "\nGoodbye!"
+            )
+
             break
 
         try:
 
-            retrieved_chunks, context = retrieve_query(query)
-
-            print("\nRetrieved Documents")
-            print("-" * 60)
-
-            for i, chunk in enumerate(retrieved_chunks, start=1):
-
-                print(f"\n{i}. {chunk.get('title', 'Untitled')}")
-                print(f"Language : {chunk.get('language', '-')}")
-                print(f"Score    : {chunk.get('score', 0):.4f}")
-                print(f"Summary  : {chunk.get('summary', '')}")
+            results, context = (
+                retrieve_query(
+                    question
+                )
+            )
 
             print("\n")
             print("=" * 60)
-            print("Context Length :", len(context), "characters")
+            print("RETRIEVED SOURCES")
             print("=" * 60)
+
+            if not results:
+
+                print(
+                    "\nNo relevant documents found."
+                )
+
+                continue
+
+            for i, source in enumerate(
+                results,
+                start=1,
+            ):
+
+                print(
+                    f"\n{i}. "
+                    f"{source.get('title', 'Untitled')}"
+                )
+
+                print(
+                    f"Language : "
+                    f"{source.get('language', '-')}"
+                )
+
+                print(
+                    f"URL      : "
+                    f"{source.get('url', '-')}"
+                )
+
+                print(
+                    f"Score    : "
+                    f"{source.get('score', 0.0):.4f}"
+                )
+
+            print("\n")
+            print("=" * 60)
+            print("CONTEXT GENERATED")
+            print("=" * 60)
+
+            print(
+                f"Context characters: "
+                f"{len(context)}"
+            )
 
         except Exception as e:
 
-            print(f"\nError: {e}")
+            print(
+                f"\nError: {e}"
+            )
 
 
-# ========================================================
+# ============================================================
 # Entry Point
-# ========================================================
+# ============================================================
 
 if __name__ == "__main__":
+
     main()
